@@ -26,7 +26,8 @@ export default {
 				foreground: 'hsl(var(--foreground))',
 				primary: {
 					DEFAULT: 'hsl(var(--primary))',
-					foreground: 'hsl(var(--primary-foreground))'
+					foreground: 'hsl(var(--primary-foreground))',
+					glow: 'hsl(var(--primary-glow))'
 				},
 				secondary: {
 					DEFAULT: 'hsl(var(--secondary))',
@@ -35,6 +36,14 @@ export default {
 				destructive: {
 					DEFAULT: 'hsl(var(--destructive))',
 					foreground: 'hsl(var(--destructive-foreground))'
+				},
+				success: {
+					DEFAULT: 'hsl(var(--success))',
+					foreground: 'hsl(var(--success-foreground))'
+				},
+				warning: {
+					DEFAULT: 'hsl(var(--warning))',
+					foreground: 'hsl(var(--warning-foreground))'
 				},
 				muted: {
 					DEFAULT: 'hsl(var(--muted))',
@@ -61,6 +70,19 @@ export default {
 					'accent-foreground': 'hsl(var(--sidebar-accent-foreground))',
 					border: 'hsl(var(--sidebar-border))',
 					ring: 'hsl(var(--sidebar-ring))'
+				},
+				method: {
+					get: 'hsl(var(--method-get))',
+					post: 'hsl(var(--method-post))',
+					put: 'hsl(var(--method-put))',
+					delete: 'hsl(var(--method-delete))',
+					patch: 'hsl(var(--method-patch))'
+				},
+				status: {
+					success: 'hsl(var(--status-success))',
+					redirect: 'hsl(var(--status-redirect))',
+					'client-error': 'hsl(var(--status-client-error))',
+					'server-error': 'hsl(var(--status-server-error))'
 				}
 			},
 			borderRadius: {

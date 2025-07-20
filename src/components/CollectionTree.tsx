@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { PostmanCollection, PostmanItem } from '@/types/postman';
-import { ChevronDown, ChevronRight, Folder, FileText, Plus, MoreHorizontal } from 'lucide-react';
+import { ChevronDown, ChevronRight, Folder, FileText, Plus, MoreHorizontal, Trash2 } from 'lucide-react';
 import { HttpMethodBadge } from './HttpMethodBadge';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -11,6 +11,7 @@ interface CollectionTreeProps {
   onRequestSelect: (collection: PostmanCollection, item: PostmanItem, path: string[]) => void;
   onAddRequest: (collection: PostmanCollection, folderPath?: string[]) => void;
   onAddFolder: (collection: PostmanCollection, folderPath?: string[]) => void;
+  onDeleteCollection?: (collection: PostmanCollection) => void;
 }
 
 interface TreeItemProps {
@@ -132,6 +133,7 @@ export function CollectionTree({
   onRequestSelect,
   onAddRequest,
   onAddFolder,
+  onDeleteCollection,
 }: CollectionTreeProps) {
   const [expandedCollections, setExpandedCollections] = useState<Set<string>>(
     new Set(collections.map(c => c.info.name))
@@ -185,6 +187,19 @@ export function CollectionTree({
               >
                 <MoreHorizontal className="h-3 w-3" />
               </Button>
+              {onDeleteCollection && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-6 w-6 p-0 text-destructive hover:text-destructive"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDeleteCollection(collection);
+                  }}
+                >
+                  <Trash2 className="h-3 w-3" />
+                </Button>
+              )}
             </div>
           </div>
 

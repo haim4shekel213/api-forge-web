@@ -16,9 +16,15 @@ import {
   findItemByPath,
   executeRequest,
   saveToLocalStorage,
-  loadFromLocalStorage
+  loadFromLocalStorage,
+  checkFileSystemSupport,
+  selectCollectionsFolder,
+  loadCollectionsFromFolder,
+  saveCollectionToFolder,
+  deleteCollectionFromFolder,
+  importCollectionToFolder
 } from '@/utils/postmanUtils';
-import { Upload, Download, Plus, FileText } from 'lucide-react';
+import { Upload, Download, Plus, FileText, Folder, Trash2 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 
 export function PostmanApp() {
@@ -28,48 +34,150 @@ export function PostmanApp() {
   const [activeRequestPath, setActiveRequestPath] = useState<string[]>([]);
   const [response, setResponse] = useState<RequestResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [folderHandle, setFolderHandle] = useState<any>(null);
+  const [usingFileSystem, setUsingFileSystem] = useState(false);
 
-  // Load from localStorage on mount
+  // Load from localStorage on mount or set up file system
   useEffect(() => {
-    const savedCollections = loadFromLocalStorage<PostmanCollection[]>('postman-collections', []);
-    if (savedCollections.length > 0) {
-      setCollections(savedCollections);
+    if (checkFileSystemSupport()) {
+      setUsingFileSystem(true);
+      // Try to restore saved folder handle
+      const savedHandle = loadFromLocalStorage('collections-folder-handle', null);
+      if (savedHandle) {
+        setFolderHandle(savedHandle);
+        loadCollectionsFromFolder(savedHandle).then(setCollections);
+      } else {
+        // Load sample collection
+        const sampleCollection = createSampleCollection();
+        setCollections([sampleCollection]);
+      }
     } else {
-      // Load sample collection
-      const sampleCollection = createSampleCollection();
-      setCollections([sampleCollection]);
+      // Fallback to localStorage
+      const savedCollections = loadFromLocalStorage<PostmanCollection[]>('postman-collections', []);
+      if (savedCollections.length > 0) {
+        setCollections(savedCollections);
+      } else {
+        const sampleCollection = createSampleCollection();
+        setCollections([sampleCollection]);
+      }
     }
   }, []);
 
-  // Save to localStorage whenever collections change
+  // Save to localStorage when not using file system
   useEffect(() => {
-    saveToLocalStorage('postman-collections', collections);
-  }, [collections]);
+    if (!usingFileSystem) {
+      saveToLocalStorage('postman-collections', collections);
+    }
+  }, [collections, usingFileSystem]);
 
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+  // Auto-save to file system when collections change
+  useEffect(() => {
+    if (usingFileSystem && folderHandle && collections.length > 0) {
+      collections.forEach(async (collection) => {
+        try {
+          await saveCollectionToFolder(folderHandle, collection);
+        } catch (error) {
+          console.error('Failed to auto-save collection:', error);
+        }
+      });
+    }
+  }, [collections, folderHandle, usingFileSystem]);
+
+  const handleSelectFolder = async () => {
+    try {
+      const dirHandle = await selectCollectionsFolder();
+      if (dirHandle) {
+        setFolderHandle(dirHandle);
+        const loadedCollections = await loadCollectionsFromFolder(dirHandle);
+        setCollections(loadedCollections);
+        toast({
+          title: "Folder selected",
+          description: "Collections folder selected successfully",
+        });
+      }
+    } catch (error) {
+      toast({
+        title: "Folder selection failed",
+        description: error instanceof Error ? error.message : "Unknown error",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const json = JSON.parse(e.target?.result as string);
-        const collection = parsePostmanCollection(json);
+    try {
+      if (usingFileSystem && folderHandle) {
+        // Import to file system
+        const collection = await importCollectionToFolder(folderHandle, file);
         setCollections(prev => [...prev, collection]);
         toast({
           title: "Collection imported",
-          description: `Successfully imported "${collection.info.name}"`,
+          description: `Successfully imported "${collection.info.name}" to folder`,
         });
-      } catch (error) {
-        toast({
-          title: "Import failed",
-          description: "Invalid Postman collection file",
-          variant: "destructive",
-        });
+      } else {
+        // Fallback to memory
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          try {
+            const json = JSON.parse(e.target?.result as string);
+            const collection = parsePostmanCollection(json);
+            setCollections(prev => [...prev, collection]);
+            toast({
+              title: "Collection imported",
+              description: `Successfully imported "${collection.info.name}"`,
+            });
+          } catch (error) {
+            toast({
+              title: "Import failed",
+              description: "Invalid Postman collection file",
+              variant: "destructive",
+            });
+          }
+        };
+        reader.readAsText(file);
       }
-    };
-    reader.readAsText(file);
+    } catch (error) {
+      toast({
+        title: "Import failed",
+        description: error instanceof Error ? error.message : "Failed to import collection",
+        variant: "destructive",
+      });
+    }
+    
     event.target.value = '';
+  };
+
+  const handleDeleteCollection = async (collection: PostmanCollection) => {
+    if (!confirm(`Are you sure you want to delete "${collection.info.name}"?`)) return;
+
+    try {
+      if (usingFileSystem && folderHandle) {
+        await deleteCollectionFromFolder(folderHandle, collection.info.name);
+      }
+      
+      setCollections(prev => prev.filter(c => c.info._postman_id !== collection.info._postman_id));
+      
+      if (activeCollection?.info._postman_id === collection.info._postman_id) {
+        setActiveCollection(null);
+        setActiveRequest(null);
+        setActiveRequestPath([]);
+        setResponse(null);
+      }
+
+      toast({
+        title: "Collection deleted",
+        description: `"${collection.info.name}" has been deleted`,
+      });
+    } catch (error) {
+      toast({
+        title: "Delete failed",
+        description: error instanceof Error ? error.message : "Failed to delete collection",
+        variant: "destructive",
+      });
+    }
   };
 
   const handleExport = (collection: PostmanCollection) => {
@@ -211,6 +319,13 @@ export function PostmanApp() {
           </h1>
           <Separator orientation="vertical" className="h-6" />
           <div className="flex items-center gap-2">
+            {usingFileSystem && !folderHandle && (
+              <Button variant="outline" size="sm" onClick={handleSelectFolder}>
+                <Folder className="h-4 w-4 mr-2" />
+                Select Folder
+              </Button>
+            )}
+            
             <Button variant="outline" size="sm" onClick={handleCreateCollection}>
               <Plus className="h-4 w-4 mr-2" />
               New Collection
@@ -244,6 +359,22 @@ export function PostmanApp() {
             )}
           </div>
         </div>
+        
+        {/* Status indicator */}
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          {usingFileSystem && folderHandle && (
+            <span className="flex items-center gap-1">
+              <Folder className="h-3 w-3" />
+              File System
+            </span>
+          )}
+          {!usingFileSystem && (
+            <span className="flex items-center gap-1">
+              <FileText className="h-3 w-3" />
+              Memory Only
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Main Content */}
@@ -262,6 +393,7 @@ export function PostmanApp() {
                   onRequestSelect={handleRequestSelect}
                   onAddRequest={handleAddRequest}
                   onAddFolder={handleAddFolder}
+                  onDeleteCollection={handleDeleteCollection}
                 />
               </div>
             </div>

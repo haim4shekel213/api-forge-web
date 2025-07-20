@@ -154,3 +154,98 @@ export function loadFromLocalStorage<T>(key: string, defaultValue: T): T {
     return defaultValue;
   }
 }
+
+// File System Access API functions
+export const checkFileSystemSupport = (): boolean => {
+  return 'showDirectoryPicker' in window;
+};
+
+export const selectCollectionsFolder = async (): Promise<FileSystemDirectoryHandle | null> => {
+  try {
+    if (!checkFileSystemSupport()) {
+      throw new Error('File System Access API is not supported in this browser');
+    }
+    
+    const dirHandle = await (window as any).showDirectoryPicker({
+      mode: 'readwrite',
+      startIn: 'documents'
+    });
+    
+    // Save folder handle reference
+    saveToLocalStorage('collections-folder-handle', dirHandle);
+    return dirHandle;
+  } catch (error) {
+    console.error('Failed to select folder:', error);
+    return null;
+  }
+};
+
+export const loadCollectionsFromFolder = async (dirHandle: any): Promise<PostmanCollection[]> => {
+  const collections: PostmanCollection[] = [];
+  
+  try {
+    for await (const [name, handle] of dirHandle.entries()) {
+      if (handle.kind === 'file' && name.endsWith('.collection.json')) {
+        try {
+          const file = await handle.getFile();
+          const content = await file.text();
+          const collection = parsePostmanCollection(JSON.parse(content));
+          collections.push(collection);
+        } catch (error) {
+          console.error(`Failed to load collection ${name}:`, error);
+        }
+      }
+    }
+  } catch (error) {
+    console.error('Failed to load collections from folder:', error);
+  }
+  
+  return collections;
+};
+
+export const saveCollectionToFolder = async (
+  dirHandle: FileSystemDirectoryHandle,
+  collection: PostmanCollection
+): Promise<void> => {
+  try {
+    const fileName = `${collection.info.name.replace(/[^a-zA-Z0-9-_]/g, '_')}.collection.json`;
+    const fileHandle = await dirHandle.getFileHandle(fileName, { create: true });
+    const writable = await fileHandle.createWritable();
+    
+    const collectionJson = exportCollection(collection);
+    await writable.write(collectionJson);
+    await writable.close();
+  } catch (error) {
+    console.error('Failed to save collection to folder:', error);
+    throw error;
+  }
+};
+
+export const deleteCollectionFromFolder = async (
+  dirHandle: FileSystemDirectoryHandle,
+  collectionName: string
+): Promise<void> => {
+  try {
+    const fileName = `${collectionName.replace(/[^a-zA-Z0-9-_]/g, '_')}.collection.json`;
+    await dirHandle.removeEntry(fileName);
+  } catch (error) {
+    console.error('Failed to delete collection from folder:', error);
+    throw error;
+  }
+};
+
+export const importCollectionToFolder = async (
+  dirHandle: FileSystemDirectoryHandle,
+  file: File
+): Promise<PostmanCollection> => {
+  try {
+    const content = await file.text();
+    const collection = parsePostmanCollection(JSON.parse(content));
+    
+    await saveCollectionToFolder(dirHandle, collection);
+    return collection;
+  } catch (error) {
+    console.error('Failed to import collection to folder:', error);
+    throw error;
+  }
+};
